@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 
 	"github.com/sideshow/apns2"
@@ -12,7 +13,12 @@ import (
 
 var config GlobalConfig
 
-func newPushClient(client *apns2.Client, c chan string) {
+type FailLog struct {
+	StatusCode int
+	Token      string
+}
+
+func newPushClient(client *apns2.Client, c chan string, logChan chan FailLog) {
 	var token, payload string
 	var notificationArgs []string
 	notification := apns2.Notification{Topic: config.Topic}
@@ -31,8 +37,27 @@ func newPushClient(client *apns2.Client, c chan string) {
 			if err != nil {
 				log.Printf("Error: ", err)
 			} else {
+				logChan <- FailLog{
+					Token:      token,
+					StatusCode: res.StatusCode,
+				}
 				fmt.Printf("%v-%v: '%v'\n", res.StatusCode, token, res.Reason)
 			}
+		}
+	}
+}
+
+func logIntoRedis(c chan FailLog) {
+	redisClient := newRedisClient()
+
+	for {
+		failLog := <-c
+		_, err := redisClient.SAdd(config.RedisListKey+":"+strconv.Itoa(failLog.StatusCode), failLog.Token).Result()
+		if err != nil {
+			log.Println(err)
+			redisClient.Close()
+			//reconnect redis
+			redisClient = newRedisClient()
 		}
 	}
 }
@@ -55,6 +80,7 @@ func main() {
 	if pemErr != nil {
 		log.Fatalf("Error retrieving certificate `%v`: %v", config.CertificatePath, pemErr)
 	}
+	logChans := make(chan FailLog, config.RoutineCount)
 	chans := make(chan string, config.RoutineCount)
 	client := apns2.NewClient(cert)
 	if config.Mode == "development" {
@@ -63,9 +89,13 @@ func main() {
 		client.Production()
 	}
 
+	//push goroutine
 	for i := uint(0); i < config.RoutineCount; i++ {
-		go newPushClient(client, chans)
+		go newPushClient(client, chans, logChans)
 	}
+
+	//redis log goroutine
+	go logIntoRedis(logChans)
 
 	redisClient := newRedisClient()
 
