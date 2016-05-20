@@ -37,9 +37,11 @@ func newPushClient(client *apns2.Client, c chan string, logChan chan FailLog) {
 			if err != nil {
 				log.Printf("Error: ", err)
 			} else {
-				logChan <- FailLog{
-					Token:      token,
-					StatusCode: res.StatusCode,
+				if res.StatusCode != 200 {
+					logChan <- FailLog{
+						Token:      token,
+						StatusCode: res.StatusCode,
+					}
 				}
 				fmt.Printf("%v-%v: '%v'\n", res.StatusCode, token, res.Reason)
 			}
