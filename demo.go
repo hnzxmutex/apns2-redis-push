@@ -1,35 +1,16 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"log"
 	"strings"
 
-	"github.com/go-ini/ini"
 	"github.com/sideshow/apns2"
 	"github.com/sideshow/apns2/certificate"
 	"gopkg.in/redis.v3"
 )
 
-type Config struct {
-	CertificatePath                        string
-	RedisAddr, RedisPassword, RedisListKey string
-	RoutineCount                           uint
-	Mode, Topic                            string
-}
-
-var config Config
-
-//get config
-func init() {
-	var configPath string
-	flag.StringVar(&configPath, "config-path", "./config.ini", "the config.ini path")
-	flag.Parse()
-
-	ini.MapTo(&config, configPath)
-	fmt.Println(config)
-}
+var config GlobalConfig
 
 func newPushClient(client *apns2.Client, c chan string) {
 	var token, payload string
@@ -50,7 +31,7 @@ func newPushClient(client *apns2.Client, c chan string) {
 			if err != nil {
 				log.Printf("Error: ", err)
 			} else {
-				fmt.Printf("%v: '%v'\n", res.StatusCode, res.Reason)
+				fmt.Printf("%v-%v: '%v'\n", res.StatusCode, token, res.Reason)
 			}
 		}
 	}
@@ -60,9 +41,13 @@ func newRedisClient() *redis.Client {
 	return redis.NewClient(&redis.Options{
 		Addr:        config.RedisAddr,
 		Password:    config.RedisPassword,
-		DB:          0,
+		DB:          config.RedisDB,
 		ReadTimeout: 0,
 	})
+}
+
+func init() {
+	config = getConfig()
 }
 
 func main() {
@@ -71,14 +56,14 @@ func main() {
 		log.Fatalf("Error retrieving certificate `%v`: %v", config.CertificatePath, pemErr)
 	}
 	chans := make(chan string, config.RoutineCount)
+	client := apns2.NewClient(cert)
+	if config.Mode == "development" {
+		client.Development()
+	} else {
+		client.Production()
+	}
 
 	for i := uint(0); i < config.RoutineCount; i++ {
-		client := apns2.NewClient(cert)
-		if config.Mode == "development" {
-			client.Development()
-		} else {
-			client.Production()
-		}
 		go newPushClient(client, chans)
 	}
 
@@ -89,6 +74,7 @@ func main() {
 		if err != nil {
 			log.Println(err)
 			redisClient.Close()
+			//reconnect redis
 			redisClient = newRedisClient()
 		}
 		fmt.Println(message[1])
