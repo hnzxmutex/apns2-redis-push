@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"strconv"
 	"strings"
@@ -43,7 +42,7 @@ func newPushClient(client *apns2.Client, c chan string, logChan chan FailLog) {
 						StatusCode: res.StatusCode,
 					}
 				}
-				fmt.Printf("%v-%v: '%v'\n", res.StatusCode, token, res.Reason)
+				log.Printf("%v-%v: '%v'\n", res.StatusCode, token, res.Reason)
 			}
 		}
 	}
@@ -109,7 +108,7 @@ func main() {
 			//reconnect redis
 			redisClient = newRedisClient()
 		}
-		fmt.Println(message[1])
+		log.Println(message[1])
 		chans <- message[1]
 	}
 }

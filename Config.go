@@ -2,7 +2,6 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"github.com/go-ini/ini"
 )
 
@@ -31,6 +30,5 @@ func getConfig() GlobalConfig {
 	}
 
 	ini.MapTo(&config, configPath)
-	fmt.Println(config)
 	return config
 }
